@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Planificateur de repas</title>
+</head>
+<body>
+  <h1>Planificateur de repas</h1>
+
+  <form id="formulaire">
+    <p>
+      <label>Budget de la semaine (€) :
+        <input type="number" id="budget" value="30" min="5">
+      </label>
+    </p>
+    <p>
+      <label>Temps de cuisine (heures) :
+        <input type="number" id="temps" value="2" min="1" step="0.5">
+      </label>
+    </p>
+    <p>
+      <label>Nombre de repas à prévoir :
+        <input type="number" id="nbRepas" value="10" min="1" max="21">
+      </label>
+    </p>
+    <p>Exclusions :</p>
+    <label><input type="checkbox" name="exclusion" value="vegetarien"> Végétarien</label><br>
+    <label><input type="checkbox" name="exclusion" value="porc"> Sans porc</label><br>
+    <label><input type="checkbox" name="exclusion" value="poisson"> Sans poisson</label><br>
+    <p><button type="submit">Générer mon plan</button></p>
+  </form>
+
+  <div id="resultat"></div>
+
+  <script src="recettes.js"></script>
+  <script>
+    function melanger(tableau) {
+      return [...tableau].sort(() => Math.random() - 0.5);
+    }
+
+    function genererPlan(nbRepas, exclusions) {
+      const autorisees = RECETTES.filter(function (r) {
+        if (exclusions.includes("vegetarien") && r.contient.length > 0) return false;
+        if (exclusions.includes("porc") && r.contient.includes("porc")) return false;
+        if (exclusions.includes("poisson") && r.contient.includes("poisson")) return false;
+        return true;
+      });
+
+      if (autorisees.length === 0) return [];
+
+      const nbRecettes = Math.min(autorisees.length, Math.ceil(nbRepas / 3));
+      const plan = melanger(autorisees).slice(0, nbRecettes).map(function (r) {
+        return { recette: r, portions: 0 };
+      });
+
+      for (let i = 0; i < nbRepas; i++) {
+        plan[i % plan.length].portions++;
+      }
+      return plan;
+    }
+
+    document.getElementById("formulaire").addEventListener("submit", function (e) {
+      e.preventDefault();
+
+      const budget = Number(document.getElementById("budget").value);
+      const nbRepas = Number(document.getElementById("nbRepas").value);
+      const exclusions = Array.from(
+        document.querySelectorAll('input[name="exclusion"]:checked')
+      ).map(function (c) { return c.value; });
+
+      const plan = genererPlan(nbRepas, exclusions);
+      const zone = document.getElementById("resultat");
+
+      if (plan.length === 0) {
+        zone.textContent = "Aucune recette ne correspond à ces exclusions.";
+        return;
+      }
+
+      let total = 0;
+      let html = "<h2>Ton plan de la semaine</h2><ul>";
+      plan.forEach(function (ligne) {
+        const cout = ligne.recette.cout * ligne.portions;
+        total += cout;
+        html += "<li>" + ligne.portions + " × " + ligne.recette.nom +
+                " (" + cout.toFixed(2) + " €)</li>";
+      });
+      html += "</ul><p>Coût estimé : " + total.toFixed(2) + " € sur " + budget + " €</p>";
+
+      if (total > budget) {
+        html += "<p>⚠️ Ce plan dépasse ton budget. Clique à nouveau sur le bouton pour en générer un autre.</p>";
+      }
+            // Liste de courses regroupée par rayon
+      const courses = {};
+      plan.forEach(function (ligne) {
+        ligne.recette.ingredients.forEach(function (ing) {
+          const cle = ing.nom + "|" + ing.unite;
+          if (!courses[ing.rayon]) courses[ing.rayon] = {};
+          if (!courses[ing.rayon][cle]) {
+            courses[ing.rayon][cle] = { nom: ing.nom, unite: ing.unite, qte: 0 };
+          }
+          courses[ing.rayon][cle].qte += ing.qte * ligne.portions;
+        });
+      });
+
+      html += "<h2>Liste de courses</h2>";
+      Object.keys(courses).sort().forEach(function (rayon) {
+        html += "<h3>" + rayon + "</h3><ul>";
+        Object.values(courses[rayon]).forEach(function (a) {
+          html += "<li>" + Math.round(a.qte * 100) / 100 + " " + a.unite + " – " + a.nom + "</li>";
+        });
+        html += "</ul>";
+      });
+
+          // Ordre de préparation : les recettes les plus longues d'abord
+      const ordre = [...plan].sort(function (a, b) {
+        return b.recette.tempsMin - a.recette.tempsMin;
+      });
+      const tempsDispo = Number(document.getElementById("temps").value) * 60;
+      let cumul = 0;
+
+      html += "<h2>Ordre de préparation</h2><ol>";
+      ordre.forEach(function (ligne) {
+        cumul += ligne.recette.tempsMin;
+        html += "<li>" + ligne.recette.nom + " : " + ligne.portions +
+                " portions d'un coup (environ " + ligne.recette.tempsMin + " min)</li>";
+      });
+      html += "</ol><p>Durée cumulée : " + cumul + " min si tu enchaînes sans chevaucher. " +
+              "Lance les plats longs en premier et prépare les autres pendant qu'ils cuisent.</p>";
+
+      if (cumul > tempsDispo * 1.5) {
+        html += "<p>⚠️ C'est long par rapport à ton temps de cuisine. Génère un autre plan ou augmente ton temps.</p>";
+      }
+
+      zone.innerHTML = html;
+    });
+  </script>
+</body>
+</html>
